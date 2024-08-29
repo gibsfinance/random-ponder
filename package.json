@@ -11,7 +11,7 @@
     "typecheck": "tsc"
   },
   "dependencies": {
-    "@gibs/random": "^0.0.1",
+    "@gibs/random": "^0.0.8",
     "@ponder/core": "^0.5.19",
     "hono": "^4.5.0",
     "viem": "^2.20.1"

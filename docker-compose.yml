@@ -1,0 +1,24 @@
+services:
+  gibrandom-indexer-postgres:
+    container_name: gibrandom-indexer-postgres
+    image: gibsfinance/postgres
+    shm_size: 16g
+    command: ['postgres']
+    ports:
+      - 9151:5432
+    volumes:
+      - ./postgres-data:/var/lib/postgresql/data
+    networks:
+      - gibrandom-indexer
+    environment:
+      - POSTGRES_DB=gibrandom-indexer
+      - POSTGRES_USER=gibrandom-indexer
+      - POSTGRES_PASSWORD=password
+
+networks:
+  gibrandom-indexer:
+    driver: bridge
+
+volumes:
+  gibrandom-indexer:
+    external: true
