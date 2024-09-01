@@ -58,6 +58,7 @@ ponder.on("Random.ink()", async ({ event, context }) => {
         storage: inkEvent.args.pointer,
         lastOkTransactionId: tx.id,
         provider: inkEvent.args.provider,
+        template,
         token: sectionInput.token,
         price: sectionInput.price,
         duration: sectionInput.duration,
@@ -92,7 +93,16 @@ ponder.on('Random:Heat', async ({ event, context }) => {
   const heatId = scopedId.heat(context, randomUtils.location(section, index))
   const preimageId = scopedId.preimage(context, randomUtils.location(section, index))
   const pointerId = scopedId.pointer(context, section)
+  await upsertBlock(context, event)
   const tx = await upsertTransaction(context, event)
+  await context.db.Preimage.update({
+    id: preimageId,
+    data: {
+      accessed: true,
+      heatId,
+      timestamp: event.block.timestamp,
+    },
+  })
   await context.db.Pointer.update({
     id: pointerId,
     data: ({ current, }) => ({
@@ -105,7 +115,7 @@ ponder.on('Random:Heat', async ({ event, context }) => {
     data: {
       transactionId: tx.id,
       index: event.log.logIndex,
-      // startId: undefined,
+      startId: undefined,
       preimageId,
     },
   })
@@ -113,18 +123,9 @@ ponder.on('Random:Heat', async ({ event, context }) => {
 
 ponder.on('Random:Start', async ({ event, context }) => {
   const { owner, key } = event.args
+  await upsertBlock(context, event)
   const tx = await upsertTransaction(context, event)
   const startId = scopedId.start(context, key)
-  await context.db.Heat.updateMany({
-    where: {
-      transactionId: tx.id,
-      index: { lt: event.log.logIndex },
-      startId: { equals: undefined },
-    },
-    data: {
-      startId: startId,
-    },
-  })
   await context.db.Start.create({
     id: startId,
     data: {
@@ -133,6 +134,38 @@ ponder.on('Random:Start', async ({ event, context }) => {
       owner,
       key,
       index: event.log.logIndex,
+    },
+  })
+  const heats = await context.db.Heat.findMany({
+    where: {
+      transactionId: tx.id,
+      index: { lt: event.log.logIndex },
+      // startId: { equals: undefined },
+    },
+  })
+  const heatIds = heats.items.filter((item) => (
+    !item.startId
+  )).map((item) => (
+    item.id
+  ))
+  if (!heatIds.length) {
+    return
+  }
+  const preimageIds = heats.items.map((item) => (
+    item.preimageId
+  ))
+  await context.db.Preimage.updateMany({
+    where: { id: { in: preimageIds } },
+    data: { startId }
+  })
+  await context.db.Heat.updateMany({
+    where: {
+      id: {
+        in: heatIds,
+      },
+    },
+    data: {
+      startId: startId,
     },
   })
 })
@@ -145,6 +178,7 @@ ponder.on('Random:Reveal', async ({ event, context }) => {
   } = event.args
   const revealId = scopedId.reveal(context, location)
   const preimageId = scopedId.preimage(context, location)
+  await upsertBlock(context, event)
   const tx = await upsertTransaction(context, event)
   const preimage = await context.db.Preimage.update({
     id: preimageId,
@@ -172,7 +206,31 @@ ponder.on('Random:Cast', async ({ event, context }) => {
   const { key, seed } = event.args
   const castId = scopedId.cast(context, key)
   const startId = scopedId.start(context, key)
+  await upsertBlock(context, event)
   const tx = await upsertTransaction(context, event)
+  const preimageIdsUnderStart = await context.db.Preimage.findMany({
+    where: {
+      startId,
+    }
+  })
+  const preimageIds = preimageIdsUnderStart.items.map((i) => i.id)
+  if (!preimageIds.length) {
+    throw new Error('no preimages found!')
+  }
+  await context.db.Preimage.updateMany({
+    data: { castId },
+    where: {
+      id: {
+        in: preimageIds,
+      },
+    }
+  })
+  await context.db.Start.update({
+    id: startId,
+    data: {
+      castId,
+    },
+  })
   await context.db.Cast.create({
     id: castId,
     data: {
@@ -190,6 +248,7 @@ ponder.on('Random:Expired', async ({ event, context }) => {
   const startId = scopedId.start(context, key)
   const castId = scopedId.cast(context, key)
   const expiredId = scopedId.expired(context, key)
+  await upsertBlock(context, event)
   const tx = await upsertTransaction(context, event)
   await context.db.Expired.create({
     id: expiredId,
@@ -213,8 +272,8 @@ ponder.on('Random:Bleach', async ({ event, context }) => {
   }
   const bleachId = scopedId.bleach(context, section)
   const pointerId = scopedId.pointer(context, section)
+  await upsertBlock(context, event)
   const tx = await upsertTransaction(context, event)
-  console.log(bleachId)
   await context.db.Bleach.create({
     id: bleachId,
     data: {
@@ -235,6 +294,7 @@ ponder.on('Random:Bleach', async ({ event, context }) => {
 ponder.on('Reader:Ok', async ({ event, context }) => {
   const { section } = event.args
   const pointerId = scopedId.pointer(context, section)
+  await upsertBlock(context, event)
   const tx = await upsertTransaction(context, event)
   await context.db.Pointer.update({
     id: pointerId,
